@@ -96,7 +96,7 @@ Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed re
 
 Please see [CONTRIBUTING](.github/CONTRIBUTING.md) for details.
 
-## Security
+## Security Vulnerabilities
 
 This package must only be used to talk to a **trusted internal hub application**. Never point `hub_url` at an untrusted or public host — the token grants whoever holds it the ability to have arbitrary serialized job payloads executed on the hub. Please review [our security policy](../../security/policy) on how to report security vulnerabilities.
 
