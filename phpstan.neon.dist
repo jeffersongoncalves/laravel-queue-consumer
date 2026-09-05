@@ -1,0 +1,14 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - src
+
+    level: 5
+
+    tmpDir: build/phpstan
+
+    checkOctaneCompatibility: true
+
+    checkModelProperties: false

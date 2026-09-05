@@ -1,0 +1,12 @@
+services:
+  demo:
+    image: php:8.3-cli-bookworm
+    working_dir: /workspace
+    volumes:
+      - ../../laravel-queue-worker:/workspace/packages/laravel-queue-worker
+      - ../..:/workspace/packages/laravel-queue-consumer
+      - demo-apps:/workspace/apps
+    command: sleep infinity
+
+volumes:
+  demo-apps:
