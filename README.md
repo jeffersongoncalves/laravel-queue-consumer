@@ -1,3 +1,9 @@
+<div class="filament-hidden">
+
+![Laravel Queue Consumer](https://raw.githubusercontent.com/jeffersongoncalves/laravel-queue-consumer/main/art/jeffersongoncalves-laravel-queue-consumer.png)
+
+</div>
+
 # Laravel Queue Consumer
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/jeffersongoncalves/laravel-queue-consumer.svg?style=flat-square)](https://packagist.org/packages/jeffersongoncalves/laravel-queue-consumer)
