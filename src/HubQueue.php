@@ -8,19 +8,29 @@ use Illuminate\Contracts\Queue\Queue as QueueContract;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Queue\Queue;
 use Illuminate\Support\Facades\Http;
+use LogicException;
 
 class HubQueue extends Queue implements QueueContract
 {
+    /**
+     * Payload key holding the session values carried to the environment.
+     */
+    public const SESSION_PAYLOAD_KEY = 'queue-consumer:session';
+
     private const RETRY_TIMES = 3;
 
     private const RETRY_SLEEP_MILLISECONDS = 100;
 
+    /**
+     * @param  list<string>  $sessionKeys
+     */
     public function __construct(
         private readonly string $hubUrl,
         private readonly string $token,
         private readonly string $slug,
         private readonly int $timeout,
         private readonly string $defaultQueue = 'default',
+        private readonly array $sessionKeys = [],
     ) {}
 
     // ponytail: no hub status endpoint is configurable yet, so every queue-depth
@@ -103,6 +113,60 @@ class HubQueue extends Queue implements QueueContract
         return null;
     }
 
+    /**
+     * The job runs in a fresh process with an empty session, so the configured
+     * session keys travel inside the payload and are restored by the
+     * queue-consumer:run command before the job is fired.
+     *
+     * @param  string|object  $job
+     * @param  string  $queue
+     * @param  mixed  $data
+     * @return array<string, mixed>
+     */
+    protected function createPayloadArray($job, $queue, $data = ''): array
+    {
+        $payload = parent::createPayloadArray($job, $queue, $data);
+
+        $session = array_filter(
+            session()->only($this->sessionKeys),
+            fn (mixed $value): bool => $value !== null,
+        );
+
+        if ($session === []) {
+            return $payload;
+        }
+
+        $this->assertTransportIsEncrypted();
+
+        return [...$payload, self::SESSION_PAYLOAD_KEY => $session];
+    }
+
+    /**
+     * Session values are application data, not opaque job arguments, so they are
+     * never put on the wire in cleartext. A hub on the loopback interface never
+     * leaves the machine and is allowed without TLS.
+     *
+     * @throws LogicException when session values would be sent over plain HTTP
+     */
+    private function assertTransportIsEncrypted(): void
+    {
+        $scheme = parse_url($this->hubUrl, PHP_URL_SCHEME);
+        $host = parse_url($this->hubUrl, PHP_URL_HOST);
+
+        if ($scheme === 'https' || in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
+            return;
+        }
+
+        throw new LogicException(
+            'Carrying session values requires an https queue-consumer.hub_url, got "'.$this->hubUrl.'". '
+            .'Either serve the hub over TLS or empty the queue-consumer.session list.'
+        );
+    }
+
+    /**
+     * Resolve the queue name a job was dispatched to, falling back to the
+     * connection default.
+     */
     private function getQueue(?string $queue): string
     {
         return $queue ?: $this->defaultQueue;

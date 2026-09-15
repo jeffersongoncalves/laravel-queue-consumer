@@ -11,6 +11,7 @@ use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Jobs\SyncJob;
+use JeffersonGoncalves\QueueConsumer\HubQueue;
 use Throwable;
 
 class RunQueueConsumerCommand extends Command
@@ -21,6 +22,10 @@ class RunQueueConsumerCommand extends Command
 
     protected $description = 'Execute a job payload received from the queue hub';
 
+    /**
+     * Execute the base64-encoded payload the hub sent back, raising the same
+     * queue lifecycle events a regular worker would raise around it.
+     */
     public function handle(): int
     {
         $payload = base64_decode((string) $this->option('payload'));
@@ -28,6 +33,8 @@ class RunQueueConsumerCommand extends Command
         $container = Container::getInstance();
 
         $job = new SyncJob($container, $payload, self::CONNECTION_NAME, 'default');
+
+        $this->restoreSession($job);
 
         /** @var Dispatcher $events */
         $events = $container->make('events');
@@ -50,5 +57,19 @@ class RunQueueConsumerCommand extends Command
         $events->dispatch(new JobProcessed(self::CONNECTION_NAME, $job));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * This process has an empty session, so the session values the dispatching
+     * process carried in the payload are restored before anything reads them.
+     */
+    private function restoreSession(SyncJob $job): void
+    {
+        /** @var array<string, mixed> $session */
+        $session = $job->payload()[HubQueue::SESSION_PAYLOAD_KEY] ?? [];
+
+        if ($session !== []) {
+            session()->put($session);
+        }
     }
 }
