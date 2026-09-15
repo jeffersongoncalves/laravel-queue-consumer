@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use JeffersonGoncalves\QueueConsumer\Tests\Fixtures\FailingJob;
 use JeffersonGoncalves\QueueConsumer\Tests\Fixtures\MiddlewareFlaggingJob;
+use JeffersonGoncalves\QueueConsumer\Tests\Fixtures\SessionCapturingJob;
 
 function capturePayloadFor(object $job): string
 {
@@ -35,6 +36,7 @@ beforeEach(function (): void {
     MiddlewareFlaggingJob::$middlewareRan = false;
     MiddlewareFlaggingJob::$handled = false;
     FailingJob::$failedCount = 0;
+    SessionCapturingJob::$seen = [];
 });
 
 it('executes the job through its middleware', function (): void {
@@ -66,6 +68,34 @@ it('never calls failed() without --last-attempt', function (): void {
     ])->run())->toThrow(RuntimeException::class);
 
     expect(FailingJob::$failedCount)->toBe(0);
+});
+
+it('restores the carried session before the job runs', function (): void {
+    config()->set('queue-consumer.session', ['tenant', 'host']);
+    session()->put(['tenant' => 'acme', 'host' => '10.0.0.1']);
+
+    $payload = capturePayloadFor(new SessionCapturingJob);
+
+    // The job runs in a fresh process, with nothing left from the dispatching one.
+    session()->flush();
+
+    $this->artisan('queue-consumer:run', ['--payload' => base64_encode($payload)])
+        ->assertSuccessful();
+
+    expect(SessionCapturingJob::$seen)->toBe(['tenant' => 'acme', 'host' => '10.0.0.1']);
+});
+
+it('runs the job with an empty session when no session key is configured', function (): void {
+    session()->put(['tenant' => 'acme']);
+
+    $payload = capturePayloadFor(new SessionCapturingJob);
+
+    session()->flush();
+
+    $this->artisan('queue-consumer:run', ['--payload' => base64_encode($payload)])
+        ->assertSuccessful();
+
+    expect(SessionCapturingJob::$seen)->toBe(['tenant' => null, 'host' => null]);
 });
 
 it('raises the queue lifecycle events around a successful job', function (): void {

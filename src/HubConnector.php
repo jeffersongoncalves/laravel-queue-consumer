@@ -16,6 +16,7 @@ class HubConnector implements ConnectorInterface
             slug: (string) config('queue-consumer.slug'),
             timeout: (int) config('queue-consumer.timeout', 5),
             defaultQueue: $config['queue'] ?? 'default',
+            sessionKeys: array_values((array) config('queue-consumer.session', [])),
         );
     }
 }

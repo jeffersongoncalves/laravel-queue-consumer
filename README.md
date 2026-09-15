@@ -51,6 +51,8 @@ return [
     'slug' => env('QUEUE_CONSUMER_SLUG', basename(base_path())),
 
     'timeout' => env('QUEUE_CONSUMER_TIMEOUT', 5),
+
+    'session' => [],
 ];
 ```
 
@@ -68,6 +70,23 @@ QUEUE_CONSUMER_TIMEOUT=5
 
 `QUEUE_CONSUMER_SLUG` is optional and defaults to `basename(base_path())` — the folder name of the current environment (e.g. `app-feature-1234`). No changes are required at any `dispatch()` call site; every job your application already dispatches will be forwarded to the hub as soon as `QUEUE_CONNECTION=hub` is set.
 
+### Carrying Context Into the Job
+
+The job is executed by `queue-consumer:run` in a **fresh process**, so nothing the dispatching request held in memory is there when it runs.
+
+Laravel's own [Context](https://laravel.com/docs/context) needs no configuration here: it is dehydrated into the payload at dispatch and rehydrated when `queue-consumer:run` raises `JobProcessing`, so `Context::get()` and `Queue::before()` callbacks work exactly as they do under a regular worker.
+
+The **session** is the part Laravel does not carry — a queued job has no session to begin with. Applications that keep tenant data in the session (a legacy multi-tenant app resolving the database from `session('tenant')`, for instance) can list the keys the job needs:
+
+```php
+// config/queue-consumer.php
+'session' => ['tenant', 'db_host', 'db_port'],
+```
+
+Those keys are read from the session at dispatch, travel inside the payload, and are written back into the session of the process running the job, before the job and its middleware run. Keys missing from the session are skipped, and the default empty list changes nothing.
+
+These values are sent to the hub inside the payload, so list only what the job actually needs — never credentials or the whole session.
+
 ## Protocol
 
 Every job is forwarded as a `POST` request to `{hub_url}/api/jobs`:
@@ -78,7 +97,7 @@ Every job is forwarded as a `POST` request to `{hub_url}/api/jobs`:
     "path": "/srv/environments/app-feature-1234",
     "queue": "default",
     "delay": 0,
-    "payload": "<Laravel's own serialized job payload, untouched>"
+    "payload": "<Laravel's own serialized job payload, plus the configured session keys>"
 }
 ```
 

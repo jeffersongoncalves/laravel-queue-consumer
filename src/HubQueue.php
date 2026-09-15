@@ -11,16 +11,25 @@ use Illuminate\Support\Facades\Http;
 
 class HubQueue extends Queue implements QueueContract
 {
+    /**
+     * Payload key holding the session values carried to the environment.
+     */
+    public const SESSION_PAYLOAD_KEY = 'queue-consumer:session';
+
     private const RETRY_TIMES = 3;
 
     private const RETRY_SLEEP_MILLISECONDS = 100;
 
+    /**
+     * @param  list<string>  $sessionKeys
+     */
     public function __construct(
         private readonly string $hubUrl,
         private readonly string $token,
         private readonly string $slug,
         private readonly int $timeout,
         private readonly string $defaultQueue = 'default',
+        private readonly array $sessionKeys = [],
     ) {}
 
     // ponytail: no hub status endpoint is configurable yet, so every queue-depth
@@ -101,6 +110,30 @@ class HubQueue extends Queue implements QueueContract
     public function pop($queue = null): mixed
     {
         return null;
+    }
+
+    /**
+     * The job runs in a fresh process with an empty session, so the configured
+     * session keys travel inside the payload and are restored by the
+     * queue-consumer:run command before the job is fired.
+     *
+     * @param  string|object  $job
+     * @param  string  $queue
+     * @param  mixed  $data
+     * @return array<string, mixed>
+     */
+    protected function createPayloadArray($job, $queue, $data = ''): array
+    {
+        $payload = parent::createPayloadArray($job, $queue, $data);
+
+        $session = array_filter(
+            session()->only($this->sessionKeys),
+            fn (mixed $value): bool => $value !== null,
+        );
+
+        return $session === []
+            ? $payload
+            : [...$payload, self::SESSION_PAYLOAD_KEY => $session];
     }
 
     private function getQueue(?string $queue): string

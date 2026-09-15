@@ -7,6 +7,7 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use JeffersonGoncalves\QueueConsumer\Tests\Fixtures\MiddlewareFlaggingJob;
+use JeffersonGoncalves\QueueConsumer\Tests\Fixtures\SessionCapturingJob;
 
 it('dispatches a job through the hub connection with the intact payload', function (): void {
     Http::fake([
@@ -52,6 +53,43 @@ it('propagates hub http errors to the dispatching code instead of swallowing the
 
     expect(fn () => dispatch(new MiddlewareFlaggingJob))
         ->toThrow(RequestException::class);
+});
+
+it('carries the configured session keys in the payload', function (): void {
+    config()->set('queue-consumer.session', ['tenant', 'host', 'absent']);
+    session()->put(['tenant' => 'acme', 'host' => '10.0.0.1', 'other' => 'ignored']);
+
+    Http::fake([
+        '*/api/jobs' => Http::response(['id' => 'job-1'], 202),
+    ]);
+
+    dispatch(new SessionCapturingJob);
+
+    Http::assertSent(function (Request $request): bool {
+        $payload = json_decode((string) $request['payload'], true);
+
+        expect($payload['queue-consumer:session'])->toBe(['tenant' => 'acme', 'host' => '10.0.0.1']);
+
+        return true;
+    });
+});
+
+it('leaves the payload untouched when no session key is configured', function (): void {
+    session()->put(['tenant' => 'acme']);
+
+    Http::fake([
+        '*/api/jobs' => Http::response(['id' => 'job-1'], 202),
+    ]);
+
+    dispatch(new SessionCapturingJob);
+
+    Http::assertSent(function (Request $request): bool {
+        $payload = json_decode((string) $request['payload'], true);
+
+        expect($payload)->not->toHaveKey('queue-consumer:session');
+
+        return true;
+    });
 });
 
 it('sends the delay in seconds for delayed dispatch', function (): void {
