@@ -8,6 +8,11 @@ use Illuminate\Queue\Connectors\ConnectorInterface;
 
 class HubConnector implements ConnectorInterface
 {
+    /**
+     * Build the hub queue from the package configuration.
+     *
+     * @param  array<string, mixed>  $config  the `queue.connections.hub` entry
+     */
     public function connect(array $config): HubQueue
     {
         return new HubQueue(

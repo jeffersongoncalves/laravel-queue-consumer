@@ -22,6 +22,10 @@ class RunQueueConsumerCommand extends Command
 
     protected $description = 'Execute a job payload received from the queue hub';
 
+    /**
+     * Execute the base64-encoded payload the hub sent back, raising the same
+     * queue lifecycle events a regular worker would raise around it.
+     */
     public function handle(): int
     {
         $payload = base64_decode((string) $this->option('payload'));

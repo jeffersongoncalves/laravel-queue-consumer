@@ -16,6 +16,9 @@ class SessionCapturingJob implements ShouldQueue
      */
     public static array $seen = [];
 
+    /**
+     * Record what the session held in the process that ran the job.
+     */
     public function handle(): void
     {
         self::$seen = [

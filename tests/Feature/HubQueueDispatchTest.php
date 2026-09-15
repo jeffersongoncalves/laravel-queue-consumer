@@ -74,6 +74,51 @@ it('carries the configured session keys in the payload', function (): void {
     });
 });
 
+it('refuses to carry session values to a plain http hub', function (): void {
+    config()->set('queue-consumer.hub_url', 'http://hub.example.test');
+    config()->set('queue-consumer.session', ['tenant']);
+    session()->put(['tenant' => 'acme']);
+
+    Http::fake();
+
+    expect(fn () => dispatch(new SessionCapturingJob))
+        ->toThrow(LogicException::class, 'requires an https queue-consumer.hub_url');
+
+    Http::assertNothingSent();
+});
+
+it('allows a plain http hub on the loopback interface', function (): void {
+    config()->set('queue-consumer.hub_url', 'http://localhost:8080');
+    config()->set('queue-consumer.session', ['tenant']);
+    session()->put(['tenant' => 'acme']);
+
+    Http::fake([
+        '*/api/jobs' => Http::response(['id' => 'job-1'], 202),
+    ]);
+
+    dispatch(new SessionCapturingJob);
+
+    Http::assertSent(function (Request $request): bool {
+        $payload = json_decode((string) $request['payload'], true);
+
+        expect($payload['queue-consumer:session'])->toBe(['tenant' => 'acme']);
+
+        return true;
+    });
+});
+
+it('still dispatches to a plain http hub when no session value is carried', function (): void {
+    config()->set('queue-consumer.hub_url', 'http://hub.example.test');
+
+    Http::fake([
+        '*/api/jobs' => Http::response(['id' => 'job-1'], 202),
+    ]);
+
+    dispatch(new SessionCapturingJob);
+
+    Http::assertSent(fn (Request $request): bool => true);
+});
+
 it('leaves the payload untouched when no session key is configured', function (): void {
     session()->put(['tenant' => 'acme']);
 

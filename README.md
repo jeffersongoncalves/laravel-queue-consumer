@@ -85,7 +85,7 @@ The **session** is the part Laravel does not carry — a queued job has no sessi
 
 Those keys are read from the session at dispatch, travel inside the payload, and are written back into the session of the process running the job, before the job and its middleware run. Keys missing from the session are skipped, and the default empty list changes nothing.
 
-These values are sent to the hub inside the payload, so list only what the job actually needs — never credentials or the whole session.
+These values are sent to the hub inside the payload, so list only what the job actually needs — never credentials or the whole session. Because they are application data rather than opaque job arguments, dispatching them requires an `https` `hub_url`: with the list filled and a plain `http://` hub, the dispatch throws instead of putting them on the wire in cleartext. A hub on `localhost` / `127.0.0.1` / `::1` never leaves the machine and is allowed without TLS.
 
 ## Protocol
 

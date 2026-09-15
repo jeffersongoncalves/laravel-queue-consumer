@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\Queue as QueueContract;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Queue\Queue;
 use Illuminate\Support\Facades\Http;
+use LogicException;
 
 class HubQueue extends Queue implements QueueContract
 {
@@ -131,11 +132,41 @@ class HubQueue extends Queue implements QueueContract
             fn (mixed $value): bool => $value !== null,
         );
 
-        return $session === []
-            ? $payload
-            : [...$payload, self::SESSION_PAYLOAD_KEY => $session];
+        if ($session === []) {
+            return $payload;
+        }
+
+        $this->assertTransportIsEncrypted();
+
+        return [...$payload, self::SESSION_PAYLOAD_KEY => $session];
     }
 
+    /**
+     * Session values are application data, not opaque job arguments, so they are
+     * never put on the wire in cleartext. A hub on the loopback interface never
+     * leaves the machine and is allowed without TLS.
+     *
+     * @throws LogicException when session values would be sent over plain HTTP
+     */
+    private function assertTransportIsEncrypted(): void
+    {
+        $scheme = parse_url($this->hubUrl, PHP_URL_SCHEME);
+        $host = parse_url($this->hubUrl, PHP_URL_HOST);
+
+        if ($scheme === 'https' || in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
+            return;
+        }
+
+        throw new LogicException(
+            'Carrying session values requires an https queue-consumer.hub_url, got "'.$this->hubUrl.'". '
+            .'Either serve the hub over TLS or empty the queue-consumer.session list.'
+        );
+    }
+
+    /**
+     * Resolve the queue name a job was dispatched to, falling back to the
+     * connection default.
+     */
     private function getQueue(?string $queue): string
     {
         return $queue ?: $this->defaultQueue;
