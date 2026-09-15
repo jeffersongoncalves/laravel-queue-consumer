@@ -2,6 +2,14 @@
 
 All notable changes to `laravel-queue-consumer` will be documented in this file.
 
+## 1.0.1 - 2026-09-15
+
+### Fixed
+
+- `queue-consumer:run` now raises the queue lifecycle events around job execution (#5). `JobProcessing`, `JobProcessed` and `JobExceptionOccurred` are dispatched with the `hub` connection name, so `Queue::before()` / `Queue::after()` callbacks — context restore, metrics, log correlation ids, per-tenant setup — run inside the ephemeral environment like they do under a regular worker. `JobFailed` keeps being dispatched by `Job::fail()` itself on `--last-attempt`, matching `Illuminate\Queue\Worker`.
+
+**Full Changelog**: https://github.com/jeffersongoncalves/laravel-queue-consumer/compare/1.0.0...1.0.1
+
 ## 1.0.0 - 2026-09-05
 
 Initial release.
