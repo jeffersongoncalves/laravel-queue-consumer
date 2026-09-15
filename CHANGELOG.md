@@ -2,6 +2,26 @@
 
 All notable changes to `laravel-queue-consumer` will be documented in this file.
 
+## 1.1.0 - 2026-09-15
+
+### Added
+
+- Session values can now be carried into the process that runs the job (#7). The job runs in a fresh process with an empty session, so applications that keep tenant data there had to pass it through every job class by hand. List the keys in `queue-consumer.session` and they travel in the payload and are restored before the job and its middleware run:
+  
+  ```php
+  // config/queue-consumer.php
+  'session' => ['tenant', 'db_host', 'db_port'],
+  
+  ```
+  The default empty list changes nothing for existing installs. Laravel's own Context needs no configuration — it is already carried in the payload and rehydrated on `JobProcessing`.
+  
+
+### Security
+
+- Carrying session values requires an `https` `hub_url`. With the list filled and a plain `http://` hub, the dispatch throws instead of putting application data on the wire in cleartext (CWE-319). A hub on `localhost` / `127.0.0.1` / `::1` never leaves the machine and is still allowed without TLS, and an `http` hub with an empty session list keeps working as before.
+
+**Full Changelog**: https://github.com/jeffersongoncalves/laravel-queue-consumer/compare/1.0.1...1.1.0
+
 ## 1.0.1 - 2026-09-15
 
 ### Fixed
