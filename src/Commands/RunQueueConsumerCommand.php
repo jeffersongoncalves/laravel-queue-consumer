@@ -11,6 +11,8 @@ use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Jobs\SyncJob;
+use Illuminate\Support\Facades\Queue;
+use JeffersonGoncalves\QueueConsumer\HubJob;
 use JeffersonGoncalves\QueueConsumer\HubQueue;
 use Throwable;
 
@@ -18,7 +20,7 @@ class RunQueueConsumerCommand extends Command
 {
     private const CONNECTION_NAME = 'hub';
 
-    protected $signature = 'queue-consumer:run {--payload=} {--last-attempt}';
+    protected $signature = 'queue-consumer:run {--payload=} {--queue=default} {--last-attempt}';
 
     protected $description = 'Execute a job payload received from the queue hub';
 
@@ -32,7 +34,9 @@ class RunQueueConsumerCommand extends Command
 
         $container = Container::getInstance();
 
-        $job = new SyncJob($container, $payload, self::CONNECTION_NAME, 'default');
+        $queue = (string) ($this->option('queue') ?: 'default');
+
+        $job = new HubJob($container, $payload, self::CONNECTION_NAME, $queue);
 
         $this->restoreSession($job);
 
@@ -54,9 +58,26 @@ class RunQueueConsumerCommand extends Command
             throw $exception;
         }
 
+        if ($job->isReleased()) {
+            $this->releaseToHub($job, $payload);
+        }
+
         $events->dispatch(new JobProcessed(self::CONNECTION_NAME, $job));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * A job released by its middleware (WithoutOverlapping, RateLimited, a plain
+     * release()) has nowhere to go in this process — the hub is the only queue
+     * around, so the untouched payload is posted back to it with the requested
+     * delay. A failure to re-post throws, so the job is never lost quietly.
+     */
+    private function releaseToHub(HubJob $job, string $payload): void
+    {
+        Queue::connection(self::CONNECTION_NAME)->pushRaw($payload, $job->getQueue(), [
+            'delay' => $job->releaseDelay(),
+        ]);
     }
 
     /**

@@ -87,6 +87,18 @@ Those keys are read from the session at dispatch, travel inside the payload, and
 
 These values are sent to the hub inside the payload, so list only what the job actually needs — never credentials or the whole session. Because they are application data rather than opaque job arguments, dispatching them requires an `https` `hub_url`: with the list filled and a plain `http://` hub, the dispatch throws instead of putting them on the wire in cleartext. A hub on `localhost` / `127.0.0.1` / `::1` never leaves the machine and is allowed without TLS.
 
+### Released Jobs
+
+A job that releases itself instead of completing — what `WithoutOverlapping`, `RateLimited`, `ThrottlesExceptions` and a plain `$this->release(60)` do — is posted back to the hub with the requested delay, so it runs again later exactly as it would under a regular worker. The payload goes back untouched, on the queue given by `--queue`, and a hub that refuses the re-post makes the command fail loudly instead of dropping the job.
+
+The hub is expected to pass the original queue name to the command:
+
+```bash
+php artisan queue-consumer:run --payload=<base64> --queue=imports
+```
+
+`--queue` defaults to `default`, so a hub that does not send it still works — released jobs just come back on the default queue.
+
 ## Protocol
 
 Every job is forwarded as a `POST` request to `{hub_url}/api/jobs`:
