@@ -2,6 +2,21 @@
 
 All notable changes to `laravel-queue-consumer` will be documented in this file.
 
+## 1.2.0 - 2026-09-16
+
+### Fixed
+
+- A released job is no longer dropped (#8). `SyncJob::release()` only flips a flag — real drivers push the payload back, `sync` has nowhere to push to — so a job released by `WithoutOverlapping`, `RateLimited`, `ThrottlesExceptions` or a plain `$this->release(60)` ran, released itself, and still exited `0`: the hub treated it as delivered and dropped it, with no exception, no failed job and no log line on either side.
+  
+  The job now runs through a `HubJob` that captures the delay the base `release($delay)` discards, and a released job is posted back to the hub with that delay. The payload goes back untouched, so the hub needs no changes. A hub that refuses the re-post makes the command fail loudly instead of losing the job.
+  
+
+### Added
+
+- `queue-consumer:run --queue=` so a released job returns to the queue it came from. It defaults to `default`, so a hub that does not send it keeps working — released jobs just come back on the default queue.
+
+**Full Changelog**: https://github.com/jeffersongoncalves/laravel-queue-consumer/compare/1.1.0...1.2.0
+
 ## 1.1.0 - 2026-09-15
 
 ### Added
@@ -11,6 +26,7 @@ All notable changes to `laravel-queue-consumer` will be documented in this file.
   ```php
   // config/queue-consumer.php
   'session' => ['tenant', 'db_host', 'db_port'],
+  
   
   ```
   The default empty list changes nothing for existing installs. Laravel's own Context needs no configuration — it is already carried in the payload and rehydrated on `JobProcessing`.
