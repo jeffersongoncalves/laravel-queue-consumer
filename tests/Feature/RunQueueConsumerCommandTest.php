@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
@@ -11,6 +12,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use JeffersonGoncalves\QueueConsumer\Tests\Fixtures\FailingJob;
 use JeffersonGoncalves\QueueConsumer\Tests\Fixtures\MiddlewareFlaggingJob;
+use JeffersonGoncalves\QueueConsumer\Tests\Fixtures\ReleasingJob;
 use JeffersonGoncalves\QueueConsumer\Tests\Fixtures\SessionCapturingJob;
 
 function capturePayloadFor(object $job): string
@@ -37,6 +39,85 @@ beforeEach(function (): void {
     MiddlewareFlaggingJob::$handled = false;
     FailingJob::$failedCount = 0;
     SessionCapturingJob::$seen = [];
+    ReleasingJob::$handled = false;
+    ReleasingJob::$releaseDelay = 60;
+});
+
+it('posts a released job back to the hub with its delay', function (): void {
+    $payload = capturePayloadFor(new ReleasingJob);
+
+    Http::fake([
+        '*/api/jobs' => Http::response(['id' => 'job-2'], 202),
+    ]);
+
+    $this->artisan('queue-consumer:run', [
+        '--payload' => base64_encode($payload),
+        '--queue' => 'imports',
+    ])->assertSuccessful();
+
+    expect(ReleasingJob::$handled)->toBeTrue();
+
+    Http::assertSent(function (Request $request) use ($payload): bool {
+        expect($request['payload'])->toBe($payload);
+        expect($request['queue'])->toBe('imports');
+        expect($request['delay'])->toBe(60);
+
+        return true;
+    });
+});
+
+it('posts a job released without delay back to the hub right away', function (): void {
+    ReleasingJob::$releaseDelay = 0;
+
+    $payload = capturePayloadFor(new ReleasingJob);
+
+    Http::fake([
+        '*/api/jobs' => Http::response(['id' => 'job-2'], 202),
+    ]);
+
+    $this->artisan('queue-consumer:run', ['--payload' => base64_encode($payload)])
+        ->assertSuccessful();
+
+    Http::assertSent(function (Request $request): bool {
+        expect($request['queue'])->toBe('default');
+        expect($request['delay'])->toBe(0);
+
+        return true;
+    });
+});
+
+it('does not post anything back when the job simply completes', function (): void {
+    $payload = capturePayloadFor(new MiddlewareFlaggingJob);
+
+    Http::fake([
+        '*/api/jobs' => Http::response(['id' => 'job-2'], 202),
+    ]);
+
+    $this->artisan('queue-consumer:run', ['--payload' => base64_encode($payload)])
+        ->assertSuccessful();
+
+    Http::assertNothingSent();
+});
+
+it('fails loudly when the hub refuses the released job', function (): void {
+    // The dispatch is answered, the release that follows is not.
+    Http::fakeSequence()
+        ->push(['id' => 'job-1'], 202)
+        ->pushStatus(500);
+
+    dispatch(new ReleasingJob);
+
+    $payload = null;
+
+    Http::assertSent(function (Request $request) use (&$payload): bool {
+        $payload ??= (string) $request['payload'];
+
+        return true;
+    });
+
+    expect(fn () => $this->artisan('queue-consumer:run', [
+        '--payload' => base64_encode((string) $payload),
+    ])->run())->toThrow(RequestException::class);
 });
 
 it('executes the job through its middleware', function (): void {
